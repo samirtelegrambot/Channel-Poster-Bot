@@ -1,9 +1,1 @@
-services:
-  - type: web
-    name: telegram-channel-bot
-    runtime: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python main.py"
-    envVars:
-      - key: BOT_TOKEN
-        sync: false
+startCommand: "python main.py"
