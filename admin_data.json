@@ -1,7 +1,0 @@
-{
-  "super_admin": 8150652959,
-  "admins": {
-    "123456789": ["@yourchannel"],
-    "987654321": ["@otherchannel"]
-  }
-}
