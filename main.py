@@ -1,31 +1,26 @@
 import json
 import os
 from telegram import (
-    Update,
-    KeyboardButton,
-    ReplyKeyboardMarkup,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup
+    Update, KeyboardButton, ReplyKeyboardMarkup,
+    InlineKeyboardButton, InlineKeyboardMarkup
 )
 from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    ConversationHandler,
-    filters
+    Application, CommandHandler, MessageHandler,
+    CallbackQueryHandler, ContextTypes,
+    ConversationHandler, filters
 )
 from dotenv import load_dotenv
 
+# Load .env file
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+OWNER_ID = int(os.getenv("OWNER_ID", "0"))  # ensure it's an int
 
 ADMINS_FILE = 'admins.json'
 CHANNELS_FILE = 'user_channels.json'
 
+# Ensure data files exist
 for file_name in [ADMINS_FILE, CHANNELS_FILE]:
     if not os.path.exists(file_name):
         with open(file_name, 'w') as f:
@@ -65,6 +60,8 @@ def get_main_keyboard(user_id):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    print(f"[DEBUG] User ID: {user_id}, OWNER_ID: {OWNER_ID}, is_admin: {is_admin(user_id)}")
+
     if not is_admin(user_id):
         await update.message.reply_text("Access denied.")
         return
@@ -98,8 +95,10 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("You have no channels added.")
             return ConversationHandler.END
 
-        buttons = [[InlineKeyboardButton(name, callback_data=f"post_to|{name}")]
-                   for name in user_channels]
+        buttons = [
+            [InlineKeyboardButton(name, callback_data=f"post_to|{name}")]
+            for name in user_channels
+        ]
         await update.message.reply_text(
             "Select a channel to post in:",
             reply_markup=InlineKeyboardMarkup(buttons)
@@ -221,5 +220,5 @@ if __name__ == "__main__":
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(post_callback, pattern="^post_to\|"))
 
-    print("Bot is running...")
+    print("✅ Bot is running...")
     app.run_polling()
