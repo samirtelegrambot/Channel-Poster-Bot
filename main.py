@@ -58,11 +58,10 @@ def is_admin(user_id):
     return str(user_id) in admins or user_id == OWNER_ID
 
 
-# States for ConversationHandler
+# States
 ADD_ADMIN, REMOVE_ADMIN, ADD_CHANNEL, REMOVE_CHANNEL, AWAITING_POST_TEXT = range(5)
 
 
-# Reply Keyboard for menu
 def get_main_keyboard(user_id):
     buttons = [
         [KeyboardButton("➕ Add Channel"), KeyboardButton("➖ Remove Channel")],
@@ -73,7 +72,6 @@ def get_main_keyboard(user_id):
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 
-# Start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_admin(user_id):
@@ -82,7 +80,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Choose an option:", reply_markup=get_main_keyboard(user_id))
 
 
-# MessageHandler for main menu options
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.effective_user.id
@@ -145,7 +142,6 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
 
-# Add admin
 async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.text.strip()
     admins = load_admins()
@@ -155,7 +151,6 @@ async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# Remove admin
 async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.text.strip()
     admins = load_admins()
@@ -168,7 +163,6 @@ async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# Add channel
 async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel = update.message.text.strip()
     user_id = str(update.effective_user.id)
@@ -183,7 +177,6 @@ async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# Remove channel
 async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel = update.message.text.strip()
     user_id = str(update.effective_user.id)
@@ -197,7 +190,6 @@ async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# Handle callback for post channel selection
 async def post_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -207,7 +199,6 @@ async def post_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return AWAITING_POST_TEXT
 
 
-# Handle message to post in selected channel
 async def handle_post_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel = context.user_data.get("post_channel")
     if not channel:
@@ -226,7 +217,6 @@ async def handle_post_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# Cancel fallback
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Operation cancelled.")
     return ConversationHandler.END
