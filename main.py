@@ -17,7 +17,7 @@ if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "r") as f:
         data = json.load(f)
 else:
-    data = {"super_admin": 123456789, "admins": {}}
+    data = {"super_admin": 8150652959, "admins": {}}
 
 def save_data():
     with open(DATA_FILE, "w") as f:
