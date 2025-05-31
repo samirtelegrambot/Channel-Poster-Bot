@@ -6,24 +6,24 @@ from telegram import (
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    CallbackQueryHandler, ContextTypes,
-    ConversationHandler, filters
+    CallbackQueryHandler, ContextTypes, ConversationHandler, filters
 )
 from dotenv import load_dotenv
 
 load_dotenv()
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = 8150652959
-
 ADMINS_FILE = 'admins.json'
 CHANNELS_FILE = 'user_channels.json'
 
-# Ensure data files exist
+# Ensure JSON files exist
 for file_name in [ADMINS_FILE, CHANNELS_FILE]:
     if not os.path.exists(file_name):
         with open(file_name, 'w') as f:
             json.dump({}, f)
 
+# Helper functions
 def load_admins():
     with open(ADMINS_FILE) as f:
         return json.load(f)
@@ -44,19 +44,20 @@ def is_admin(user_id):
     admins = load_admins()
     return str(user_id) in admins or user_id == OWNER_ID
 
-# Conversation states
-ADD_ADMIN, REMOVE_ADMIN, ADD_CHANNEL, REMOVE_CHANNEL, AWAITING_POST_TEXT = range(5)
+# States
+ADD_ADMIN, REMOVE_ADMIN, ADD_CHANNEL, REMOVE_CHANNEL, AWAITING_POST_TEXT, CONFIRM_CANCEL = range(6)
 
+# Main menu keyboard
 def get_main_keyboard(user_id):
     buttons = [
-        [KeyboardButton("➕ Add Channel"), KeyboardButton("➖ Remove Channel")],
-        [KeyboardButton("📋 My Channels"), KeyboardButton("📨 Post")]
+        [KeyboardButton("Add Channel"), KeyboardButton("Remove Channel")],
+        [KeyboardButton("My Channels"), KeyboardButton("Post")]
     ]
     if user_id == OWNER_ID:
-        buttons.append([KeyboardButton("👤 Manage Admins")])
+        buttons.append([KeyboardButton("Manage Admins")])
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
-# Start
+# Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_admin(user_id):
@@ -64,161 +65,147 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text("Choose an option:", reply_markup=get_main_keyboard(user_id))
 
-# Handle menu
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.effective_user.id
 
-    if text == "➕ Add Channel":
-        await update.message.reply_text("Send the @channel username to add:")
+    if text == "Add Channel":
+        await update.message.reply_text("Send the @username of the channel:")
         return ADD_CHANNEL
 
-    elif text == "➖ Remove Channel":
-        await update.message.reply_text("Send the @channel username to remove:")
+    elif text == "Remove Channel":
+        await update.message.reply_text("Send the @username of the channel to remove:")
         return REMOVE_CHANNEL
 
-    elif text == "📋 My Channels":
+    elif text == "My Channels":
         channels = load_channels()
         user_channels = channels.get(str(user_id), [])
-        msg = "Your channels:\n" + "\n".join(user_channels) if user_channels else "No channels added."
-        await update.message.reply_text(msg, reply_markup=get_main_keyboard(user_id))
+        if user_channels:
+            await update.message.reply_text("Your channels:\n" + "\n".join(user_channels))
+        else:
+            await update.message.reply_text("You have not added any channels.")
         return ConversationHandler.END
 
-    elif text == "📨 Post":
+    elif text == "Post":
         channels = load_channels()
         user_channels = channels.get(str(user_id), [])
         if not user_channels:
             await update.message.reply_text("You have no channels added.")
             return ConversationHandler.END
-        buttons = [[InlineKeyboardButton(name, callback_data=f"post_to|{name}")] for name in user_channels]
-        await update.message.reply_text("Select a channel:", reply_markup=InlineKeyboardMarkup(buttons))
-        return ConversationHandler.END
 
-    elif text == "👤 Manage Admins" and user_id == OWNER_ID:
         buttons = [
-            [KeyboardButton("➕ Add Admin"), KeyboardButton("➖ Remove Admin")],
-            [KeyboardButton("🔙 Back")]
+            [InlineKeyboardButton(name, callback_data=f"post_to|{name}")]
+            for name in user_channels
         ]
-        await update.message.reply_text("Admin management:", reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
+        await update.message.reply_text(
+            "Select a channel to post in:",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
         return ConversationHandler.END
 
-    elif text == "➕ Add Admin" and user_id == OWNER_ID:
+    elif text == "Manage Admins" and user_id == OWNER_ID:
+        buttons = [
+            [KeyboardButton("Add Admin"), KeyboardButton("Remove Admin")],
+            [KeyboardButton("Back")]
+        ]
+        await update.message.reply_text(
+            "Admin management:",
+            reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+        )
+        return ConversationHandler.END
+
+    elif text == "Add Admin" and user_id == OWNER_ID:
         await update.message.reply_text("Send the user ID to add as admin:")
         return ADD_ADMIN
 
-    elif text == "➖ Remove Admin" and user_id == OWNER_ID:
-        await update.message.reply_text("Send the user ID to remove:")
+    elif text == "Remove Admin" and user_id == OWNER_ID:
+        await update.message.reply_text("Send the user ID to remove from admin:")
         return REMOVE_ADMIN
 
-    elif text == "🔙 Back":
+    elif text == "Back":
         await update.message.reply_text("Main menu:", reply_markup=get_main_keyboard(user_id))
         return ConversationHandler.END
 
-    else:
-        await update.message.reply_text("⚠️ Please use the buttons below.")
-        return ConversationHandler.END
-
-# Add admin
+# Admin management
 async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.text.strip()
-    context.user_data["pending_admin_id"] = user_id
-    await update.message.reply_text(
-        f"Add user {user_id} as admin?",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Confirm", callback_data="confirm_add_admin"),
-             InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
-        ])
-    )
+    admins = load_admins()
+    admins[user_id] = True
+    save_admins(admins)
+    await update.message.reply_text(f"User {user_id} added as admin.")
     return ConversationHandler.END
 
-# Remove admin
 async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.text.strip()
-    context.user_data["pending_admin_id"] = user_id
-    await update.message.reply_text(
-        f"Remove user {user_id} from admin?",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Confirm", callback_data="confirm_remove_admin"),
-             InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
-        ])
-    )
+    admins = load_admins()
+    if user_id in admins:
+        del admins[user_id]
+        save_admins(admins)
+        await update.message.reply_text(f"User {user_id} removed from admin.")
+    else:
+        await update.message.reply_text("User not found in admin list.")
     return ConversationHandler.END
 
-# Add channel
+# Channel management
 async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channel = update.message.text.strip()
-    context.user_data["pending_channel"] = channel
+    context.user_data['channel_to_add'] = update.message.text.strip()
+    buttons = [
+        [InlineKeyboardButton("✅ Confirm", callback_data="confirm_add")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
+    ]
     await update.message.reply_text(
-        f"Add channel {channel}?",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Confirm", callback_data="confirm_add_channel"),
-             InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
-        ])
+        f"Confirm adding {context.user_data['channel_to_add']}?",
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
-    return ConversationHandler.END
+    return CONFIRM_CANCEL
 
-# Remove channel
 async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channel = update.message.text.strip()
-    context.user_data["pending_channel"] = channel
+    context.user_data['channel_to_remove'] = update.message.text.strip()
+    buttons = [
+        [InlineKeyboardButton("✅ Confirm", callback_data="confirm_remove")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
+    ]
     await update.message.reply_text(
-        f"Remove channel {channel}?",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Confirm", callback_data="confirm_remove_channel"),
-             InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
-        ])
+        f"Confirm removing {context.user_data['channel_to_remove']}?",
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
-    return ConversationHandler.END
+    return CONFIRM_CANCEL
 
-# Confirm button actions
+# Confirm/Cancel buttons
 async def confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    data = query.data
-    user_id = str(query.from_user.id)
     await query.answer()
+    user_id = str(query.from_user.id)
+    channels = load_channels()
+    channels.setdefault(user_id, [])
 
-    if data == "confirm_add_channel":
-        channel = context.user_data.get("pending_channel")
-        channels = load_channels()
-        channels.setdefault(user_id, [])
-        if channel not in channels[user_id]:
-            channels[user_id].append(channel)
-            save_channels(channels)
-            await query.edit_message_text(f"✅ Channel {channel} added.")
+    if query.data == "confirm_add":
+        channel = context.user_data.get("channel_to_add")
+        if channel and channel not in channels[user_id]:
+            if len(channels[user_id]) >= 5:
+                await query.edit_message_text("⚠️ You can only add up to 5 channels.")
+            else:
+                channels[user_id].append(channel)
+                save_channels(channels)
+                await query.edit_message_text(f"✅ Channel {channel} added.")
         else:
-            await query.edit_message_text("Channel already exists.")
+            await query.edit_message_text("⚠️ Channel already exists or invalid.")
 
-    elif data == "confirm_remove_channel":
-        channel = context.user_data.get("pending_channel")
-        channels = load_channels()
-        if channel in channels.get(user_id, []):
+    elif query.data == "confirm_remove":
+        channel = context.user_data.get("channel_to_remove")
+        if channel and channel in channels[user_id]:
             channels[user_id].remove(channel)
             save_channels(channels)
             await query.edit_message_text(f"❌ Channel {channel} removed.")
         else:
-            await query.edit_message_text("Channel not found.")
+            await query.edit_message_text("⚠️ Channel not found.")
 
-    elif data == "confirm_add_admin":
-        admin_id = context.user_data.get("pending_admin_id")
-        admins = load_admins()
-        admins[admin_id] = True
-        save_admins(admins)
-        await query.edit_message_text(f"✅ User {admin_id} added as admin.")
+    elif query.data == "cancel":
+        await query.edit_message_text("Operation cancelled.")
 
-    elif data == "confirm_remove_admin":
-        admin_id = context.user_data.get("pending_admin_id")
-        admins = load_admins()
-        if admin_id in admins:
-            del admins[admin_id]
-            save_admins(admins)
-            await query.edit_message_text(f"❌ User {admin_id} removed.")
-        else:
-            await query.edit_message_text("User not found.")
+    return ConversationHandler.END
 
-    elif data == "cancel":
-        await query.edit_message_text("❌ Operation cancelled.")
-
-# Post to channel
+# Posting
 async def post_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -227,28 +214,29 @@ async def post_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"Send the message to post in {channel}:")
     return AWAITING_POST_TEXT
 
-# Forward post message
 async def handle_post_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel = context.user_data.get("post_channel")
     if not channel:
         await update.message.reply_text("No channel selected.")
         return ConversationHandler.END
+
     try:
         await context.bot.copy_message(
             chat_id=channel,
             from_chat_id=update.effective_chat.id,
             message_id=update.message.message_id
         )
-        await update.message.reply_text(f"✅ Message posted to {channel}.", reply_markup=get_main_keyboard(update.effective_user.id))
+        await update.message.reply_text(f"✅ Message posted to {channel}.")
     except Exception as e:
         await update.message.reply_text(f"❌ Failed to post: {e}")
     return ConversationHandler.END
 
-# Cancel
+# Fallback cancel
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Operation cancelled.")
+    await update.message.reply_text("Operation cancelled.")
     return ConversationHandler.END
 
+# Main entry
 if __name__ == "__main__":
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -260,15 +248,14 @@ if __name__ == "__main__":
             ADD_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel)],
             REMOVE_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, remove_channel)],
             AWAITING_POST_TEXT: [MessageHandler(filters.ALL, handle_post_text)],
+            CONFIRM_CANCEL: [CallbackQueryHandler(confirm_callback, pattern="^(confirm_add|confirm_remove|cancel)$")]
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv_handler)
-    app.add_handler(CallbackQueryHandler(confirm_callback, pattern="^confirm_"))
-    app.add_handler(CallbackQueryHandler(post_callback, pattern="^post_to\|"))
-    app.add_handler(CallbackQueryHandler(confirm_callback, pattern="^cancel$"))
+    app.add_handler(CallbackQueryHandler(post_callback, pattern="^post_to\\|"))
 
     print("Bot is running...")
     app.run_polling()
