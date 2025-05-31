@@ -26,6 +26,7 @@ OWNER_ID = 8150652959
 ADMINS_FILE = 'admins.json'
 CHANNELS_FILE = 'user_channels.json'
 
+# Ensure files exist
 for file in [ADMINS_FILE, CHANNELS_FILE]:
     if not os.path.exists(file):
         with open(file, 'w') as f:
@@ -109,6 +110,10 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(name, callback_data=f"post_to|{name}")]
             for name in channels
         ]
+
+        # Add “All Channels” button
+        buttons.append([InlineKeyboardButton("📢 All Channels", callback_data="post_to|ALL")])
+
         await update.message.reply_text("Select a channel to post in:", reply_markup=InlineKeyboardMarkup(buttons))
         return ConversationHandler.END
 
@@ -160,6 +165,9 @@ async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channels = load_channels()
     channels.setdefault(user_id, [])
     if channel not in channels[user_id]:
+        if len(channels[user_id]) >= 5:
+            await update.message.reply_text("⚠️ You can add a maximum of 5 channels.")
+            return ConversationHandler.END
         channels[user_id].append(channel)
         save_channels(channels)
         await update.message.reply_text(f"✅ Channel {channel} added.")
@@ -193,18 +201,33 @@ async def post_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_post_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel = context.user_data.get("post_channel")
     if not channel:
-        await update.message.reply_text("No channel selected.")
+        await update.message.reply_text("You have no channel selected.")
         return ConversationHandler.END
 
     try:
-        await context.bot.copy_message(
-            chat_id=channel,
-            from_chat_id=update.effective_chat.id,
-            message_id=update.message.message_id
-        )
-        await update.message.reply_text(f"✅ Message posted to {channel}.")
+        if channel == "ALL":
+            user_id = str(update.effective_user.id)
+            channels = load_channels().get(user_id, [])
+            if not channels:
+                await update.message.reply_text("You have no channels added.")
+                return ConversationHandler.END
+            for ch in channels:
+                await context.bot.copy_message(
+                    chat_id=ch,
+                    from_chat_id=update.effective_chat.id,
+                    message_id=update.message.message_id
+                )
+            await update.message.reply_text(f"✅ Message posted to all your channels.")
+        else:
+            await context.bot.copy_message(
+                chat_id=channel,
+                from_chat_id=update.effective_chat.id,
+                message_id=update.message.message_id
+            )
+            await update.message.reply_text(f"✅ Message posted to {channel}.")
     except Exception as e:
         await update.message.reply_text(f"❌ Failed to post: {e}")
+
     return ConversationHandler.END
 
 
