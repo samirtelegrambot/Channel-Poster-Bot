@@ -10,22 +10,22 @@ from telegram.ext import (
     filters,
 )
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 
-# Your fixed channel IDs (update with your real channels)
+# Fixed channel IDs
 FIXED_CHANNELS = [
     -1002504723776,  # Channel 1
     -1002489624380   # Channel 2
 ]
 
-# Storage for forwarded messages and selected channels
+# Temporary storage
 forwarded_messages = []
 selected_channels = []
 
-# /start command
+# Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         await update.message.reply_text("🚫 You are not authorized to use this bot.")
@@ -33,7 +33,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "✅ Welcome!\n"
         "Forward messages to me.\n"
-        "Then click below to select channels and post."
+        "Then use the buttons to select channels and post."
     )
 
 # Handle forwarded messages
@@ -46,11 +46,11 @@ async def handle_forwarded(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "📥 Message saved.\n"
-        "Use the buttons to select channels and post:",
+        "Click below to select channels and post:",
         reply_markup=channel_selection_keyboard()
     )
 
-# Inline keyboard for selecting channels
+# Inline keyboard for channel selection
 def channel_selection_keyboard():
     buttons = [
         [InlineKeyboardButton(f"Channel {idx+1}", callback_data=f"toggle_{channel_id}")]
@@ -65,7 +65,7 @@ def channel_selection_keyboard():
     ])
     return InlineKeyboardMarkup(buttons)
 
-# Handle button presses
+# Handle inline button actions
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global selected_channels
     query = update.callback_query
@@ -78,7 +78,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             selected_channels.append(channel_id)
         await query.edit_message_text(
-            "🔘 Current selection:",
+            "🔘 Selected channels:\n"
+            + "\n".join([f"✅ Channel {FIXED_CHANNELS.index(cid)+1}" for cid in selected_channels]) or "None",
             reply_markup=channel_selection_keyboard()
         )
 
@@ -104,7 +105,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Try to copy each message to each selected channel
         for msg in forwarded_messages:
             for channel_id in selected_channels:
                 try:
@@ -115,11 +115,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         forwarded_messages.clear()
         selected_channels.clear()
 
-        await query.edit_message_text("✅ Messages posted successfully!")
+        await query.edit_message_text("✅ All messages posted successfully!")
 
-# Create and run bot
+# Create bot application
 app = Application.builder().token(TOKEN).build()
 
+# Register handlers
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_forwarded))
 app.add_handler(CallbackQueryHandler(handle_callback))
