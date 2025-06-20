@@ -15,41 +15,42 @@ load_dotenv()
 TOKEN = os.getenv("TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 
-# Define your fixed channel IDs (replace with your actual ones)
+# Your fixed channel IDs (update with your real channels)
 FIXED_CHANNELS = [
     -1002504723776,  # Channel 1
     -1002489624380   # Channel 2
 ]
-# Temporary storage for forwarded messages and selected channels
+
+# Storage for forwarded messages and selected channels
 forwarded_messages = []
 selected_channels = []
 
-# Start command handler
+# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         await update.message.reply_text("🚫 You are not authorized to use this bot.")
         return
     await update.message.reply_text(
-        "✅ Welcome! Forward messages to me.\n"
-        "When ready, use the buttons to select channels and post."
+        "✅ Welcome!\n"
+        "Forward messages to me.\n"
+        "Then click below to select channels and post."
     )
 
-# Handle any forwarded message
+# Handle forwarded messages
 async def handle_forwarded(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         await update.message.reply_text("🚫 You are not authorized to use this bot.")
         return
 
-    # Save the forwarded message
     forwarded_messages.append(update.message)
 
     await update.message.reply_text(
         "📥 Message saved.\n"
-        "Click below to select channels and post:",
+        "Use the buttons to select channels and post:",
         reply_markup=channel_selection_keyboard()
     )
 
-# Generate inline keyboard for channel selection and actions
+# Inline keyboard for selecting channels
 def channel_selection_keyboard():
     buttons = [
         [InlineKeyboardButton(f"Channel {idx+1}", callback_data=f"toggle_{channel_id}")]
@@ -64,7 +65,7 @@ def channel_selection_keyboard():
     ])
     return InlineKeyboardMarkup(buttons)
 
-# Handle inline button actions
+# Handle button presses
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global selected_channels
     query = update.callback_query
@@ -77,7 +78,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             selected_channels.append(channel_id)
         await query.edit_message_text(
-            "🔘 Select channels:",
+            "🔘 Current selection:",
             reply_markup=channel_selection_keyboard()
         )
 
@@ -103,6 +104,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        # Try to copy each message to each selected channel
         for msg in forwarded_messages:
             for channel_id in selected_channels:
                 try:
@@ -110,20 +112,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     print(f"❌ Failed to post to {channel_id}: {e}")
 
-        # Clear storage after posting
         forwarded_messages.clear()
         selected_channels.clear()
 
-        await query.edit_message_text("✅ All messages posted successfully!")
+        await query.edit_message_text("✅ Messages posted successfully!")
 
-# Initialize bot application
+# Create and run bot
 app = Application.builder().token(TOKEN).build()
 
-# Register handlers
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_forwarded))
 app.add_handler(CallbackQueryHandler(handle_callback))
 
-# Start polling
-print("🚀 Bot is running with polling...")
+print("🚀 Bot is running...")
 app.run_polling()
