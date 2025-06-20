@@ -21,15 +21,21 @@ FIXED_CHANNELS = [
     -1002489624380   # Channel 2
 ]
 
-# Temporary storage
-forwarded_messages = []
-selected_channels = []
+# Create bot application
+app = Application.builder().token(TOKEN).build()
 
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         await update.message.reply_text("🚫 You are not authorized to use this bot.")
         return
+    
+    # Initialize user data if not exists
+    if 'forwarded_messages' not in context.user_data:
+        context.user_data['forwarded_messages'] = []
+    if 'selected_channels' not in context.user_data:
+        context.user_data['selected_channels'] = []
+    
     await update.message.reply_text(
         "✅ Welcome!\n"
         "Forward messages to me.\n"
@@ -42,7 +48,12 @@ async def handle_forwarded(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 You are not authorized to use this bot.")
         return
 
-    forwarded_messages.append(update.message)
+    # Initialize storage if not exists
+    if 'forwarded_messages' not in context.user_data:
+        context.user_data['forwarded_messages'] = []
+    
+    # Store message reference
+    context.user_data['forwarded_messages'].append(update.message)
 
     await update.message.reply_text(
         "📥 Message saved.\n"
@@ -67,9 +78,16 @@ def channel_selection_keyboard():
 
 # Handle inline button actions
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global selected_channels
+    # Verify user is owner
+    if update.effective_user.id != OWNER_ID:
+        await update.callback_query.answer("Not authorized")
+        return
+
     query = update.callback_query
     await query.answer()
+
+    # Get current state from user data
+    selected_channels = context.user_data.get('selected_channels', [])
 
     if query.data.startswith("toggle_"):
         channel_id = int(query.data.split("_")[1])
@@ -77,27 +95,33 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             selected_channels.remove(channel_id)
         else:
             selected_channels.append(channel_id)
+        
+        context.user_data['selected_channels'] = selected_channels
+        status = "\n".join([f"✅ Channel {FIXED_CHANNELS.index(cid)+1}" 
+                          for cid in selected_channels]) or "None"
         await query.edit_message_text(
-            "🔘 Selected channels:\n"
-            + "\n".join([f"✅ Channel {FIXED_CHANNELS.index(cid)+1}" for cid in selected_channels]) or "None",
+            f"🔘 Selected channels:\n{status}",
             reply_markup=channel_selection_keyboard()
         )
 
     elif query.data == "select_all":
-        selected_channels = FIXED_CHANNELS.copy()
+        context.user_data['selected_channels'] = FIXED_CHANNELS.copy()
         await query.edit_message_text(
             "✅ All channels selected.",
             reply_markup=channel_selection_keyboard()
         )
 
     elif query.data == "unselect_all":
-        selected_channels = []
+        context.user_data['selected_channels'] = []
         await query.edit_message_text(
             "❌ All channels unselected.",
             reply_markup=channel_selection_keyboard()
         )
 
     elif query.data == "post_now":
+        forwarded_messages = context.user_data.get('forwarded_messages', [])
+        selected_channels = context.user_data.get('selected_channels', [])
+
         if not selected_channels:
             await query.edit_message_text(
                 "⚠️ Please select at least one channel.",
@@ -105,20 +129,34 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        if not forwarded_messages:
+            await query.edit_message_text(
+                "⚠️ No messages to post.",
+                reply_markup=channel_selection_keyboard()
+            )
+            return
+
+        # Post messages and collect errors
+        errors = []
         for msg in forwarded_messages:
             for channel_id in selected_channels:
                 try:
                     await msg.copy(chat_id=channel_id)
                 except Exception as e:
-                    print(f"❌ Failed to post to {channel_id}: {e}")
+                    errors.append(f"Failed to post to {channel_id}: {str(e)}")
 
-        forwarded_messages.clear()
-        selected_channels.clear()
+        # Clear stored data
+        context.user_data['forwarded_messages'] = []
+        context.user_data['selected_channels'] = []
 
-        await query.edit_message_text("✅ All messages posted successfully!")
-
-# Create bot application
-app = Application.builder().token(TOKEN).build()
+        # Handle errors
+        if errors:
+            error_text = "❌ Some messages failed to post:\n" + "\n".join(errors[:5])
+            if len(errors) > 5:
+                error_text += f"\n... and {len(errors)-5} more errors."
+            await query.edit_message_text(error_text)
+        else:
+            await query.edit_message_text("✅ All messages posted successfully!")
 
 # Register handlers
 app.add_handler(CommandHandler("start", start))
